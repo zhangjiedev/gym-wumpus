@@ -134,13 +134,7 @@ class WumpusEnv(gym.Env):
                 if self.__goldLooted:
                     reward += 1000
                 done = True
-        observation = np.array([
-            self.__board[self.__agentX][self.__agentY].stench,
-            self.__board[self.__agentX][self.__agentY].breeze,
-            self.__board[self.__agentX][self.__agentY].gold,
-            self.__bump,
-            self.__scream
-        ])
+        observation = self.getObservation()
         self.__score += reward
         if not done:
             done = self.__score < -1000
@@ -167,15 +161,26 @@ class WumpusEnv(gym.Env):
             self.__rowDimension = 4
             self.__board = [[self.__Tile() for j in range(self.__colDimension)] for i in range(self.__rowDimension)]
             self.__addFeatures()
+        
+        return self.getObservation()
 
     def render(self, mode='human'):
         pass
 
-    def getScore(self):
-        return self.__score
-
     def close(self):
         pass
+
+    def getScore(self):
+        return self.__score
+    
+    def getObservation(self):
+        return np.array([
+            self.__board[self.__agentX][self.__agentY].stench,
+            self.__board[self.__agentX][self.__agentY].breeze,
+            self.__board[self.__agentX][self.__agentY].gold,
+            self.__bump,
+            self.__scream
+        ])
 
     def __randomInt ( self, limit ):
         return random.randrange(limit)
