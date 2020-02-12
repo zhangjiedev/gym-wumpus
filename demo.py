@@ -1,6 +1,6 @@
 import gym
 import gym_wumpus
-env = gym.make('wumpus-v0')
+env = gym.make('wumpus-extra-v0')
 
 for i_episode in range(20000):
     observation = env.reset()

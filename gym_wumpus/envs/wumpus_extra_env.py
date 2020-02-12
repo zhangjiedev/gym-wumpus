@@ -4,7 +4,8 @@ from gym.utils import seeding
 import numpy as np
 import random
 from enum import Enum
-class WumpusEnv(gym.Env):
+
+class WumpusExtraEnv(gym.Env):
     """
     Description:
         #TODO
@@ -13,13 +14,19 @@ class WumpusEnv(gym.Env):
         #TODO
     
     Observation:
-        Type: MultiBinary(5)
+        Type: Box(6) change to MultiBinary(6)
         Num	Observation        Min         Max
         0	STENCH             0           1
         1	BREEZE             0           1
         2	GLITTER            0           1
         3	BUMP               0           1
         4   SCREAM             0           1
+        5   LocationX          0           10 (removed)
+        6   LocationY          0           6  (removed)
+        5   ForwardLoc Visited 0           1
+        6   Has Arrow          0           1  (removed)
+        6   Score              -2000       1000
+
 
     Actions:
         Type: Discrete(6)
@@ -28,7 +35,8 @@ class WumpusEnv(gym.Env):
         1	Turn Right
         2   Forward
         3   Shoot
-        4   Grab
+        4   Grab (removed)
+        4   EXIT
         5   climb
     """
 
@@ -41,6 +49,7 @@ class WumpusEnv(gym.Env):
         gold   = 0;
         breeze = 0;
         stench = 0;
+        visit  = 0
 
     # Actuators
     class Action ( Enum ):
@@ -48,18 +57,21 @@ class WumpusEnv(gym.Env):
         TURN_RIGHT = 1
         FORWARD    = 2
         SHOOT      = 3
-        GRAB       = 4
+        #GRAB       = 4 (removed)
+        EXIT       = 4
         CLIMB      = 5
 
     def __init__(self):
         self.action_space = spaces.Discrete(6)
-        self.observation_space = spaces.MultiBinary(5)
+        #self.observation_space = spaces.Box(low=np.array([0, 0, 0, 0, 0, 0, -2000]), high=np.array([2, 2, 2, 2, 2, 2, 1001]), dtype=np.int16)
+        self.observation_space = spaces.MultiBinary(7)
 
     def step(self, action):
 
         self.__lastAction = self.Action(action)
-
+        # Easy Env Implementation
         reward = -1
+        #reward = 0
         done = False
         self.__bump   = 0
         self.__scream = 0
@@ -75,19 +87,24 @@ class WumpusEnv(gym.Env):
                 self.__agentDir = 0
                 
         elif self.__lastAction == self.Action.FORWARD:
-            if self.__agentDir == 0 and self.__agentX+1 < self.__colDimension:
-                self.__agentX += 1
-            elif self.__agentDir == 1 and self.__agentY-1 >= 0:
-                self.__agentY -= 1
-            elif self.__agentDir == 2 and self.__agentX-1 >= 0:
-                self.__agentX -= 1
-            elif self.__agentDir == 3 and self.__agentY+1 < self.__rowDimension:
-                self.__agentY += 1
-            else:
+            x, y = self.__getForwardLocation()
+            if (x, y) == (self.__agentX, self.__agentY):
                 self.__bump = 1
-                
+            else:
+                self.__agentX, self.__agentY = x, y
+                # Easy Env Implementation
+                if not self.__board[x][y].visit:
+                    #reward += 1
+                    self.__board[self.__agentX][self.__agentY].visit = 1
+            
             if self.__board[self.__agentX][self.__agentY].pit or self.__board[self.__agentX][self.__agentY].wumpus:
-                reward -= 1000
+                reward -= 960
+                done = True
+            # Easy Env Implementation
+            elif self.__board[self.__agentX][self.__agentY].gold:
+                self.__board[self.__agentX][self.__agentY].gold = False
+                self.__goldLooted = True
+                reward += 1000
                 done = True
             
         elif self.__lastAction == self.Action.SHOOT:
@@ -124,16 +141,28 @@ class WumpusEnv(gym.Env):
                             self.__board[self.__agentX][y].stench = 1
                             self.__scream = 1
                 
-        elif self.__lastAction == self.Action.GRAB:
-            if self.__board[self.__agentX][self.__agentY].gold:
-                self.__board[self.__agentX][self.__agentY].gold = False
-                self.__goldLooted = True
+        #elif self.__lastAction == self.Action.GRAB:
+            #if self.__board[self.__agentX][self.__agentY].gold:
+                #self.__board[self.__agentX][self.__agentY].gold = False
+                #self.__goldLooted = True
+                # Easy Env Implementation
+                #reward += 500
+        
+        elif self.__lastAction == self.Action.EXIT:
+            reward -= abs(self.__score)
+            done = True
                 
         elif self.__lastAction == self.Action.CLIMB:
             if self.__agentX == 0 and self.__agentY == 0:
                 if self.__goldLooted:
-                    reward += 1000
+                    # Easy Env Implementation
+                    #reward += 200
+                    pass
                 done = True
+
+        if self.__score < -40:
+            reward -= 1000
+
         observation = self.getObservation()
         self.__score += reward
         if not done:
@@ -162,6 +191,7 @@ class WumpusEnv(gym.Env):
             self.__board = [[self.__Tile() for j in range(self.__colDimension)] for i in range(self.__rowDimension)]
             self.__addFeatures()
         
+        self.__board[self.__agentX][self.__agentY].visit = 1
         return self.getObservation()
 
     def render(self, mode='human'):
@@ -174,12 +204,17 @@ class WumpusEnv(gym.Env):
         return self.__score
     
     def getObservation(self):
+        x, y = self.__getForwardLocation()
+        s = 1 if self.__score < -40 else 0
         return np.array([
             self.__board[self.__agentX][self.__agentY].stench,
             self.__board[self.__agentX][self.__agentY].breeze,
             self.__board[self.__agentX][self.__agentY].gold,
             self.__bump,
-            self.__scream
+            self.__scream,
+            self.__board[x][y].visit,
+            #self.__hasArrow,
+            s
         ])
 
     def __randomInt ( self, limit ):
@@ -262,3 +297,15 @@ class WumpusEnv(gym.Env):
     
     def __isInBounds ( self, c, r ):
         return c < self.__colDimension and r < self.__rowDimension and c >= 0 and r >= 0
+    
+    def __getForwardLocation(self):
+        if self.__agentDir == 0 and self.__agentX+1 < self.__colDimension:
+            return self.__agentX + 1, self.__agentY
+        elif self.__agentDir == 1 and self.__agentY-1 >= 0:
+            return self.__agentX, self.__agentY - 1
+        elif self.__agentDir == 2 and self.__agentX-1 >= 0:
+            return self.__agentX - 1, self.__agentY
+        elif self.__agentDir == 3 and self.__agentY+1 < self.__rowDimension:
+            return self.__agentX, self.__agentY + 1
+        else:
+            return self.__agentX, self.__agentY
